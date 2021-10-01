@@ -33,6 +33,8 @@ module.exports = {
       options.services = getLandoServices(services, platformConfig.runConfig);
       // Map into lando proxy routes
       const supported = _.map(options.services, service => ({name: service.name, port: service.proxyPort}));
+      // console.log('platform routes at line 36 in builder.js');
+      // console.log(JSON.stringify(platformConfig.routes, null, 2));
       options.proxy = getLandoProxyRoutes(platformConfig.routes, supported);
 
       // Get the service version of our closest application

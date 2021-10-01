@@ -54,6 +54,13 @@ module.exports = (app, lando) => {
         // @NOTE: Do we need to handle wildcards and paths?
         const aliasPath = `NetworkSettings.Networks.${lando.config.networkBridge}.Aliases`;
         const aliases = _(_.get(app, 'config.proxy', []))
+          // .map(route => {
+          //   console.log('route info from lando app.js line 58');
+          //   console.log(JSON.stringify(route, null, 2));
+          // //   route.push('food.lndo.site');
+          // //   route.push('dweeb.lndo.site');
+          //   return route;
+          // })
           .map(route => route)
           .flatten()
           .map(entry => _.isString(entry) ? entry : entry.hostname)
@@ -62,6 +69,9 @@ module.exports = (app, lando) => {
           .thru(routes => routes.concat(_.get(data, aliasPath, [])))
           .uniq()
           .value();
+
+        console.log('Alias data from lando networking app.js line 73');
+        console.log(JSON.stringify(aliases, null, 2));
 
         // Disconnect so we can reconnect
         return bridgeNet.disconnect({Container: proxyContainer, Force: true})

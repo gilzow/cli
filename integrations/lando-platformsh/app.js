@@ -28,6 +28,11 @@ module.exports = (app, lando) => {
     // Sanitize any platformsh auth
     app.log.alsoSanitize('platformsh-auth');
 
+    // console.log('Does app.config.proxy even exist (line 31 of platform app,js)?');
+    // console.log(JSON.stringify(app.config.proxy));
+    // the second "app" is variable based on the name of the app in platform
+    `app.config.proxy.${app.name}.push('appjs.lndo.site')`;
+    // const originalAppName = app._name
     // Explicitly add a path for config and make sure it exists
     app.configPath = path.join(app._config.userConfRoot, 'config', app.name);
     if (!fs.existsSync(app.configPath)) mkdirp.sync(app.configPath);
@@ -136,6 +141,57 @@ module.exports = (app, lando) => {
       app.platformsh.closestOpenCache = lando.cache.get(`${app.name}.${app.platformsh.closestApp.name}.open.cache`);
       app.log.verbose('the closest platform app is at %s', app.platformsh.closestApp.configFile);
       app.log.verbose('the closest open cache is %s', app.platformsh.closestOpenCache);
+
+      // console.log('line 145 in file app.js, do we have aliases?');
+      // console.log(JSON.stringify(app.config.proxy));
+      // console.log('app name during pre-init?');
+      // console.log(JSON.stringify(app.platformsh.closestApp.name));
+      // only here cuz ESLint was complaining about line length, but whe you have to go 4 levels deep to get to the
+      // property, your lines are gonna be long. :shrug:
+      // console.log('our platformsh id?');
+      // console.log(JSON.stringify(app.platformsh.id, null, 2));
+      let platformAppName = app.platformsh.closestApp.name;
+      // eslint-disable-next-line max-len
+      // const pshProject = new PlatformshApiClient({api_token: app.platformsh.tokens[0].token}).getProject(app.platformsh.id);
+      // const pshApi = new PlatformshApiClient({api_token: app.platformsh.tokens[0].token});
+      const pshApiToken = app.platformsh.tokens[0].token;
+
+      const pshApi = new PlatformshApiClient({api_token: pshApiToken});
+      const newDomains = pshApi.getProject(app.platformsh.id).then(project => {
+        return project.getDomains().then(domains => {
+          domains.map(domain => domain.name);
+          console.log('Our project domains?');
+          console.log(JSON.stringify(domains, null, 2));
+          return domains;
+        });
+      });
+
+      console.log('List of new domains?');
+      console.log(JSON.stringify(newDomains));
+      // eslint-disable-next-line no-unused-vars,max-len
+      const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
+      // console.log('Our new lando proxy domains? PLEASE?!');
+      // console.log(JSON.stringify(appProxyAliases, null, 2));
+      app.config.proxy[platformAppName].push(...appProxyAliases);
+      // console.log('All of our new proxy domains together?');
+      // console.log(JSON.stringify(app.config.proxy, null, 2));
+      // console.log('Keys of app:');
+      // console.log(JSON.stringify(app.platformsh.tokens[0].token, null, 2));
+
+      // const ourProject = api.getProject('6ienq4p4y6ita').then(project => {
+      //   project.getDomains().then(domains => {
+      //     console.log('Our project domains?');
+      //     console.log(JSON.stringify(domains, null, 2));
+      //   });
+      // });
+      // console.log('Our project?');
+      // console.log(JSON.stringify(project, null, 2));
+      // const domains = project.getDomains();
+;
+      // api.getAccountInfo().then(me => {
+      //   console.log('Return from the platform API?');
+      //   console.log(JSON.stringify(me, null, 2));
+      // });
 
       // Add relationships keyed by the service name
       app.platformsh.relationships = pshconf.parseRelationships(
