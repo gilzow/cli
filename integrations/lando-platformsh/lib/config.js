@@ -295,6 +295,11 @@ exports.getRouteDomains = (routes, appname, appDomain, pshApiToken, projectID) =
   //   return routes;
   // })
   .map(route => {
+    /**
+     * @todo we should only do this if the plan *isnt* a development plan as they cant have attached domains
+     * @todo looks like if there are no attached domain we get a permission denied error from the API instead of an
+     * empty result set
+     */
     if (-1 !== route.original_url.indexOf('{all}')) {
       console.log('we have a route that contains {all} so we need to go get all the attached platform domains.');
       console.log('Do we have our api token? ');
