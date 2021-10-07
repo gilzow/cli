@@ -89,12 +89,33 @@ const createLandoDomain = (route, landoDomain) => {
     // console.log('our matches from regex');
     // console.log(JSON.stringify(findDomain.exec(route)));
     // @todo I dont like assuming that our domain is in the 1 index
-    adjustedDomain = _.nth(findDomain.exec(route), 1) + '.' + landoDomain;
+    adjustedDomain = _.nth(findDomain.exec(route), 1);
+  } else if(route && 0 < route.length) {
+    // assume that what we were given is already a domain?
+    adjustedDomain = route;
   }
 
-  return adjustedDomain;
+  return adjustedDomain + '.' + landoDomain;
 };
 
+/**
+ * Combines all of our proxy addresses, assuring uniqueness
+ * @param {string} lndoDomain
+ * @param {array} defaultProxies
+ * @param {array} yamlProxies
+ * @param {array} pshDomains
+ */
+exports.combineAllProxyDomains = (lndoDomain, defaultProxies, yamlProxies, pshDomains = [] ) => {
+  console.log('our yamlProxies');
+  console.log(yamlProxies);
+  console.log('our pshDomains');
+  console.log(pshDomains);
+  const extraProxies = _.union(yamlProxies,pshDomains)
+    .map(domain => createLandoDomain(domain,lndoDomain));
+  console.log('all our extra proxies with their shiny lando domains');
+  console.log(JSON.stringify(extraProxies, null, 2));
+  return _.union(defaultProxies,extraProxies);
+}
 /*
  * Helper to find closest app
  */
@@ -244,92 +265,33 @@ exports.parseRoutes = (routes, domain) => _(routes)
  * @return {array} list of proxy aliases domains
  */
 exports.getRouteDomains = (routes, appname, appDomain, pshApiToken, projectID) => _(routes)
-  .thru(routes => {
-    // console.log('Our routes inside our new function to retrieve domains. line 218 of psh recipe config.js');
-    // console.log(JSON.stringify(routes, null, 2));
-    // console.log('Our appname inside our new function to retrieve domains. line 220 of psh recipe config.js');
-    // console.log(JSON.stringify(appname));
-    // console.log('Our appDomain inside our new function to retrieve domains. line 218 of psh recipe config.js');
-    // console.log(JSON.stringify(appDomain));
-    return routes;
-  })
-  .map((data, url) => {
-    return _.merge({original_url: url}, data);
-  })
+  // add the url as a prop of the route so we can use it later
+  .map((data, url) => _.merge({original_url: url}, data))
   // we only want the ones that are upstreams
   .filter(route => route.type === 'upstream')
-  .thru(routes => {
-    console.log('our routes after we do the first filter.');
-    console.log(JSON.stringify(routes, null, 2));
-    return routes;
-  })
   // we only want the upstreams that match our app name
-  .filter(route => {
-    let parts = route.upstream.split(':');
-    // console.log('our upstream split into pieces');
-    // console.log(JSON.stringify(parts, null, 2));
-    let appPart = _.first(parts);
-    // console.log('the first bit of our broken up upstream');
-    // console.log(JSON.stringify(appPart, null, 2));
-    // console.log('the upstream app we\'re trying to match');
-    // console.log(JSON.stringify(appname, null, 2));
-    let boolApp = (appname === appPart);
-    // console.log('the boolean we\'ll return for whether this belong to our  upstream app');
-    // console.log(JSON.stringify(boolApp, null, 2));
-    return boolApp;
-  })
-  // @todo refactor down to one line
-  .filter( route => {
-    // console.log('The URL is :');
-    // console.log(JSON.stringify(route.original_url));
-    let boolURL = (_.includes(route.original_url, '{default}'));
-    // console.log('Does our URL contain {default}?');
-    // console.log(JSON.stringify(boolURL));
-    // console.log('going to return the following for the filter');
-    // console.log(JSON.stringify(!boolURL));
-    return !boolURL;
-  })
-  // .thru(routes => {
-  //   console.log('our routes after we do the THIRD filter.');
-  //   console.log(JSON.stringify(routes, null, 2));
-  //   return routes;
-  // })
-  .map(route => {
-    /**
-     * @todo we should only do this if the plan *isnt* a development plan as they cant have attached domains
-     * @todo looks like if there are no attached domain we get a permission denied error from the API instead of an
-     * empty result set
-     */
-    if (-1 !== route.original_url.indexOf('{all}')) {
-      console.log('we have a route that contains {all} so we need to go get all the attached platform domains.');
-      console.log('Do we have our api token? ');
-      console.log(JSON.stringify(pshApiToken));
-      console.log('And what about our project ID? ');
-      console.log(JSON.stringify(projectID));
-      // @todo we need to retrieve the list of domains from the platform project, and for each one, add them as an entry
-      // in the list of domains to create aliases EXCEPT for the default domain, which we need to simply recreate as the
-      // the default lando.site domain
-      // const pshApi = new PlatformshApiClient({api_token: pshApiToken});
-      // return pshApi.getProject(projectID).then(project => {
-      //   return project.getDomains().then(domains => {
-      //     domains.map(domain => domain.name);
-      //     console.log('Our project domains?');
-      //     console.log(JSON.stringify(domains, null, 2));
-      //     return domains;
-      //   });
-      // });
-    }
-    return route;
-  })
-
+  .filter(route => appname === _.first(route.upstream.split(':')))
+  // we don't want any routes that use {default}
+  .filter( route => !_.includes(route.original_url, '{default}') )
+  .map(route => route.original_url)
   .flatten()
-  .map(route => createLandoDomain(route.original_url, appDomain))
-  // .thru(routes => {
-  //   console.log('our routes after we convert the domains?.');
-  //   console.log(JSON.stringify(routes, null, 2));
-  //   return routes;
-  // })
+  .compact()
+  .uniq()
   .value();
+
+/**
+ * Retrieves our domains
+ * @param projectID
+ * @param pshApiToken
+ * @return {Promise<*>}
+ */
+exports.getPlatformDomains = async (projectID, pshApiToken) => {
+  const pshApi = new PlatformshApiClient({api_token: pshApiToken});
+  const newDomains = await pshApi.getProject(projectID)
+    .then((project) => project.getDomains())
+    .then((domains) => domains.map(domain => domain.name));
+  return newDomains;
+};
 
 /*
  * Helper to parse the platformsh services file
