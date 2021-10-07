@@ -27,9 +27,6 @@ module.exports = (app, lando) => {
     app.log.debug('reset app id to %s', app.id);
     // Sanitize any platformsh auth
     app.log.alsoSanitize('platformsh-auth');
-
-    // console.log('Does app.config.proxy even exist (line 31 of platform app,js)?');
-    // console.log(JSON.stringify(app.config.proxy));
     // the second "app" is variable based on the name of the app in platform
     `app.config.proxy.${app.name}.push('appjs.lndo.site')`;
     // const originalAppName = app._name
@@ -147,18 +144,19 @@ module.exports = (app, lando) => {
          let platformAppName = app.platformsh.closestApp.name;
          const pshApiToken = app.platformsh.tokens[0].token;
          // eslint-disable-next-line no-unused-vars,max-len
-         const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
+         const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName);
          // if we find an index where original_url contains all
          if (0 < appProxyAliases.length) {
+           console.log('appProxyAliases before we do anything to it');
+           console.log(appProxyAliases);
            // as we add the aliases, make sure we dont have any duplicates
-           // eslint-disable-next-line max-len
            let currentProxies = app.config.proxy[platformAppName];
            let lndoDomain = app._config.domain;
            let pshProjID = app.platformsh.id;
            if (-1 !== _.find(appProxyAliases, alias => -1 !== alias.indexOf('{all}'))) {
              console.log('we have at least one route with {all}');
              const prxyNoAll = appProxyAliases.filter(proxy => -1 === proxy.indexOf('{all}'));
-             pshconf.getPlatformDomains(pshProjID, pshApiToken).then(pshDomains =>{
+             pshconf.getPlatformDomains(pshProjID, pshApiToken, app).then(pshDomains =>{
                console.log('Our domains from psh?');
                console.log(pshDomains);
                // eslint-disable-next-line max-len
@@ -169,51 +167,10 @@ module.exports = (app, lando) => {
              // eslint-disable-next-line max-len
              app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, appProxyAliases);
            }
-           // app.config.proxy[platformAppName] = _.union(app.config.proxy[platformAppName], appProxyAliases);
          } else {
            console.log('No domains to add. Proceeding.');
          }
       });
-
-
-      // const getOurDomains = async () => {
-      //   const pshApi = new PlatformshApiClient({api_token: pshApiToken});
-      //   const newDomains = await pshApi.getProject(app.platformsh.id)
-      //     .then((project) => project.getDomains())
-      //     .then((domains) => domains.map(domain => domain.name));
-      //   return newDomains;
-      // };
-
-
-      // eslint-disable-next-line no-unused-vars,max-len
-      // const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
-      // console.log('Our new lando proxy domains? PLEASE?!');
-      // console.log(JSON.stringify(appProxyAliases, null, 2));
-      // if (0 < appProxyAliases.length) {
-      //   console.log('We have some domains to add as aliases.');
-      //   app.config.proxy[platformAppName].push(...appProxyAliases);
-      // } else {
-      //   console.log('No domains to add. Proceeding.');
-      // }
-      // console.log('All of our new proxy domains together?');
-      // console.log(JSON.stringify(app.config.proxy, null, 2));
-      // console.log('Keys of app:');
-      // console.log(JSON.stringify(app.platformsh.tokens[0].token, null, 2));
-
-      // const ourProject = api.getProject('6ienq4p4y6ita').then(project => {
-      //   project.getDomains().then(domains => {
-      //     console.log('Our project domains?');
-      //     console.log(JSON.stringify(domains, null, 2));
-      //   });
-      // });
-      // console.log('Our project?');
-      // console.log(JSON.stringify(project, null, 2));
-      // const domains = project.getDomains();
-
-      // api.getAccountInfo().then(me => {
-      //   console.log('Return from the platform API?');
-      //   console.log(JSON.stringify(me, null, 2));
-      // });
 
       // Add relationships keyed by the service name
       app.platformsh.relationships = pshconf.parseRelationships(
