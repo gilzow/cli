@@ -142,37 +142,59 @@ module.exports = (app, lando) => {
       app.log.verbose('the closest platform app is at %s', app.platformsh.closestApp.configFile);
       app.log.verbose('the closest open cache is %s', app.platformsh.closestOpenCache);
 
-      // console.log('line 145 in file app.js, do we have aliases?');
-      // console.log(JSON.stringify(app.config.proxy));
-      // console.log('app name during pre-init?');
-      // console.log(JSON.stringify(app.platformsh.closestApp.name));
-      // only here cuz ESLint was complaining about line length, but whe you have to go 4 levels deep to get to the
-      // property, your lines are gonna be long. :shrug:
-      // console.log('our platformsh id?');
-      // console.log(JSON.stringify(app.platformsh.id, null, 2));
-      let platformAppName = app.platformsh.closestApp.name;
-      // eslint-disable-next-line max-len
-      // const pshProject = new PlatformshApiClient({api_token: app.platformsh.tokens[0].token}).getProject(app.platformsh.id);
-      // const pshApi = new PlatformshApiClient({api_token: app.platformsh.tokens[0].token});
-      const pshApiToken = app.platformsh.tokens[0].token;
-
-      const pshApi = new PlatformshApiClient({api_token: pshApiToken});
-      const newDomains = pshApi.getProject(app.platformsh.id).then(project => {
-        return project.getDomains().then(domains => {
-          domains.map(domain => domain.name);
-          console.log('Our project domains?');
-          console.log(JSON.stringify(domains, null, 2));
-          return domains;
-        });
+      // now lets handle adding proxy alias domains to lando that the app may need
+      app.events.on('post-init', 1, ()=> {
+         let platformAppName = app.platformsh.closestApp.name;
+         const pshApiToken = app.platformsh.tokens[0].token;
+         // eslint-disable-next-line no-unused-vars,max-len
+         const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
+         // if we find an index where original_url contains all
+         if (0 < appProxyAliases.length) {
+           // as we add the aliases, make sure we dont have any duplicates
+           // eslint-disable-next-line max-len
+           let currentProxies = app.config.proxy[platformAppName];
+           let lndoDomain = app._config.domain;
+           let pshProjID = app.platformsh.id;
+           if (-1 !== _.find(appProxyAliases, alias => -1 !== alias.indexOf('{all}'))) {
+             console.log('we have at least one route with {all}');
+             const prxyNoAll = appProxyAliases.filter(proxy => -1 === proxy.indexOf('{all}'));
+             pshconf.getPlatformDomains(pshProjID, pshApiToken).then(pshDomains =>{
+               console.log('Our domains from psh?');
+               console.log(pshDomains);
+               // eslint-disable-next-line max-len
+               app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, prxyNoAll, pshDomains);
+             });
+           } else {
+             console.log('none of our routes contain {all}');
+             // eslint-disable-next-line max-len
+             app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, appProxyAliases);
+           }
+           // app.config.proxy[platformAppName] = _.union(app.config.proxy[platformAppName], appProxyAliases);
+         } else {
+           console.log('No domains to add. Proceeding.');
+         }
       });
 
-      console.log('List of new domains?');
-      console.log(JSON.stringify(newDomains));
+
+      // const getOurDomains = async () => {
+      //   const pshApi = new PlatformshApiClient({api_token: pshApiToken});
+      //   const newDomains = await pshApi.getProject(app.platformsh.id)
+      //     .then((project) => project.getDomains())
+      //     .then((domains) => domains.map(domain => domain.name));
+      //   return newDomains;
+      // };
+
+
       // eslint-disable-next-line no-unused-vars,max-len
-      const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
+      // const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName, app._config.domain, pshApiToken, app.platformsh.id);
       // console.log('Our new lando proxy domains? PLEASE?!');
       // console.log(JSON.stringify(appProxyAliases, null, 2));
-      app.config.proxy[platformAppName].push(...appProxyAliases);
+      // if (0 < appProxyAliases.length) {
+      //   console.log('We have some domains to add as aliases.');
+      //   app.config.proxy[platformAppName].push(...appProxyAliases);
+      // } else {
+      //   console.log('No domains to add. Proceeding.');
+      // }
       // console.log('All of our new proxy domains together?');
       // console.log(JSON.stringify(app.config.proxy, null, 2));
       // console.log('Keys of app:');
@@ -187,7 +209,7 @@ module.exports = (app, lando) => {
       // console.log('Our project?');
       // console.log(JSON.stringify(project, null, 2));
       // const domains = project.getDomains();
-;
+
       // api.getAccountInfo().then(me => {
       //   console.log('Return from the platform API?');
       //   console.log(JSON.stringify(me, null, 2));
