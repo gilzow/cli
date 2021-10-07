@@ -75,14 +75,23 @@ const setPrimaryRoute = (routes = {}) => {
 };
 
 /**
- * Extracts the domain (e.g. foo.com) from the URL and combines it with the lando domain (e.g. lndo.site)
+ * Creates a local lando subdomain (e.g. foo.lndo.site)
  * @param {string} route the full url as parsed from routes.yaml
  * @param {string} landoDomain the lando local "TLD" from configuration
  * @return {string} the extracted domain
  */
 const createLandoDomain = (route, landoDomain) => {
+  return route + '.' + landoDomain;
+};
+
+/**
+ * Extracts the domain (e.g. foo.com) from the URL
+ * @param {string} route the full url as parsed from routes.yaml
+ * @return {string} the extracted domain
+ */
+const getJustTheDomain = (route) => {
   const findDomain = new RegExp('https?:\\/\\/([^\\/]+)\\/?');
-  let adjustedDomain = '';
+  let adjustedDomain = route;
   if (findDomain.test(route)) {
     // does the first array part from a regex exec not contained the matched capture group?
     // nope, it doesnt. 0 is the full match, 1 is the capture group
@@ -90,12 +99,9 @@ const createLandoDomain = (route, landoDomain) => {
     // console.log(JSON.stringify(findDomain.exec(route)));
     // @todo I dont like assuming that our domain is in the 1 index
     adjustedDomain = _.nth(findDomain.exec(route), 1);
-  } else if(route && 0 < route.length) {
-    // assume that what we were given is already a domain?
-    adjustedDomain = route;
   }
 
-  return adjustedDomain + '.' + landoDomain;
+  return adjustedDomain;
 };
 
 /**
@@ -259,12 +265,9 @@ exports.parseRoutes = (routes, domain) => _(routes)
  * Converts the list of routes from routes.yaml into "local" domains to be added as proxy aliases
  * @param {object} routes list of routes from the parsed routes.yaml file
  * @param {string} appname the name of the "app" as defined in .platform.app.yaml
- * @param {string} appDomain the local lando "tld" as defined in configuration
- * @param {string} pshApiToken Platform.sh API token so we can connect
- * @param {string} projectID Platform.sh Project ID
  * @return {array} list of proxy aliases domains
  */
-exports.getRouteDomains = (routes, appname, appDomain, pshApiToken, projectID) => _(routes)
+exports.getRouteDomains = (routes, appname) => _(routes)
   // add the url as a prop of the route so we can use it later
   .map((data, url) => _.merge({original_url: url}, data))
   // we only want the ones that are upstreams
@@ -273,7 +276,8 @@ exports.getRouteDomains = (routes, appname, appDomain, pshApiToken, projectID) =
   .filter(route => appname === _.first(route.upstream.split(':')))
   // we don't want any routes that use {default}
   .filter( route => !_.includes(route.original_url, '{default}') )
-  .map(route => route.original_url)
+  // reduce it down to just the domain
+  .map(route => getJustTheDomain(route.original_url))
   .flatten()
   .compact()
   .uniq()
@@ -283,13 +287,18 @@ exports.getRouteDomains = (routes, appname, appDomain, pshApiToken, projectID) =
  * Retrieves our domains
  * @param projectID
  * @param pshApiToken
+ * @param {object} app platform recipe version of lando app. Used so we can log a debug message on error
  * @return {Promise<*>}
  */
-exports.getPlatformDomains = async (projectID, pshApiToken) => {
+exports.getPlatformDomains = async (projectID, pshApiToken, app) => {
   const pshApi = new PlatformshApiClient({api_token: pshApiToken});
   const newDomains = await pshApi.getProject(projectID)
     .then((project) => project.getDomains())
-    .then((domains) => domains.map(domain => domain.name));
+    .then((domains) => domains.map(domain => domain.name))
+    .catch(error => {
+      app.log.debug('Error while retrieving psh domains: ', error.message)
+      return [];
+    });
   return newDomains;
 };
 
