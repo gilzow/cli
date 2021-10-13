@@ -122,6 +122,7 @@ exports.combineAllProxyDomains = (lndoDomain, defaultProxies, yamlProxies, pshDo
   console.log(JSON.stringify(extraProxies, null, 2));
   return _.union(defaultProxies,extraProxies);
 }
+
 /*
  * Helper to find closest app
  */
@@ -230,16 +231,75 @@ exports.parseRelationships = (apps, open = {}) => _(apps)
   .groupBy('service')
   .value();
 
+/**
+ * Parses the routes data from routes.yaml and creates a lando-fied version
+ * @param {array} routes
+ * @param {object} pshClient
+ * @param {object} app
+ * @return {any[]}
+ */
+exports.newParseRoutes = (routes, app) => {
+  console.log('hello from the routes parser');
+  // psh project id
+  let projectID = app.platformsh.id;
+  // the lando domain as defined in config
+  let domain = app._config.domain;
+  // the "Default" lndo.site domain. typically <app-name>.<domain>
+  let ldnoDomain = app.platformsh.domain;
+  // regex pattern for extracting domains from routes and domain info
+  let urlPattern = /^(https?:\/\/)(?!(?:www\.)?\{)([^\/]+)(\/?)/;
+  const defaultRoute = {primary: false, attributes: {}, id: null, default_route: false}
+  // update the route info with the lndo versions
+  // we want to match the preamble, domains but not {all|default} and conclusion, adding in domain to the captured domain
+  let ourRoutes = _(routes)
+    .map((config, url) => {
+      let newEntry = ([url.replace(urlPattern,'$1$2.'+domain+'$3'), _.merge( config, defaultRoute, {original_url: url})]);
+      return newEntry;
+    })
+    .fromPairs()
+    .value();
+
+  console.log('our Routes at 257');
+  console.log(JSON.stringify(ourRoutes,null,2));
+
+  let routeKeys = Object.keys(ourRoutes);
+  // @todo initially I wanted to try and deal with grabbing all our other domains from this location but for the life of
+  // me couldnt get it to work
+  // if (undefined !== _.find(routeKeys, route => -1 !== route.indexOf('{all}'))) {
+
+
+  if (undefined !== _.find(routeKeys, route => -1 !== route.indexOf('{default}'))) {
+    // @todo if we decide to keep other redirects in routes, we'll need to add the www.{default} route in
+    console.log('We have a default route we need to deal with');
+    //@todo does javavscript have a sprintf?
+    const defaultRouteDomain = 'https://'+ldnoDomain+'/';
+    // @todo we need the closest app name so we can add it as the upstream property
+    const newDefaultRoute = {
+      [defaultRouteDomain]: _.merge({
+        original_url: 'https://{default}/',
+        default_route: true,
+        type: 'upstream',
+        upstream: 'app:http'
+      }, defaultRoute)
+    };
+    // add it to our routes
+    Object.assign(ourRoutes, newDefaultRoute);
+    //now we need to remove the original {default} and www.{default}
+    _(routeKeys).filter(routeKey=> -1 !== routeKey.indexOf('{def'))
+      .forEach(deleteRoute => _.unset(ourRoutes, deleteRoute));
+  }
+
+  // console.log('our routes before returning them');
+  // console.log(JSON.stringify(ourRoutes, null, 2));
+  return ourRoutes;
+};
+
 /*
  * Helper to parse the platformsh routes file eg replace DEFAULT in the routes.yml
  */
 exports.parseRoutes = (routes, domain) => _(routes)
   // Add implicit data and defaults
   .map((config, url) => ([url, _.merge({primary: false, attributes: {}, id: null, original_url: url}, config)]))
-  // .tap(function(route){
-  //   console.log('Contents of route at line 190 in config.js');
-  //   console.log(JSON.stringify(route, null, 2));
-  // })
   // Filter out FQDNs because they are going to point to a prod site
   // NOTE: do we want to make the above configurable?
   .filter(route => _.includes(route[0], '{default}'))
@@ -262,7 +322,19 @@ exports.parseRoutes = (routes, domain) => _(routes)
   .value();
 
 /**
- * Converts the list of routes from routes.yaml into "local" domains to be added as proxy aliases
+ * Converts our proxy alias domains to pseudo routes
+ * @param {array} domains list of proxy alias domains
+ * @param {string} appname name of the app the alias domains are atteched to
+ * @return {array} list of primary app domains converted back to pseudo routes
+ */
+exports.buildExtraRoutes = (domains, appname) => _(domains)
+  .map(domain => ([domain, {primary: true, attributes: {}, id: null, original_url: domain, type: 'upstream', upstream: appname}]))
+  .fromPairs()
+  .value();
+
+/**
+ * Converts the list of routes from routes.yaml that are primary types for a specific app (appname) into "local" domains
+ * to be added as proxy aliases
  * @param {object} routes list of routes from the parsed routes.yaml file
  * @param {string} appname the name of the "app" as defined in .platform.app.yaml
  * @return {array} list of proxy aliases domains
@@ -294,8 +366,17 @@ exports.getPlatformDomains = async (projectID, pshApiToken, app) => {
   const pshApi = new PlatformshApiClient({api_token: pshApiToken});
   const newDomains = await pshApi.getProject(projectID)
     .then((project) => project.getDomains())
-    .then((domains) => domains.map(domain => domain.name))
+    //.then((domains) => domains.map(domain => domain.name))
+    .then((domains) => {
+      console.log('domains at 409');
+      console.log(JSON.stringify(domains));
+      return domains;
+    }, (rejected)=>{
+      console.log('REJECTED!!!!!!!!!');
+      console.log(rejected);
+    })
     .catch(error => {
+      console.log('Error while retrieving psh domains: ', error.message);
       app.log.debug('Error while retrieving psh domains: ', error.message)
       return [];
     });

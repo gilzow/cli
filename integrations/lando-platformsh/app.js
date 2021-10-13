@@ -122,11 +122,61 @@ module.exports = (app, lando) => {
       // Get the platform raw platform config
       const platformConfig = app.platformsh.config;
 
+      console.log('Routes as parsed from yaml:');
+      console.log(platformConfig.routes);
+
+      app.config.domains = [];
+      app.config.domains['app'] = [];
+
       // Add the parsed routes config
-      app.platformsh.routes = pshconf.parseRoutes(platformConfig.routes, app.platformsh.domain);
-      app.platformsh.primaryRoute = _.findKey(app.platformsh.routes, {primary: true});
-      app.log.verbose('parsed platformsh routes');
-      app.log.silly('platformsh routes are', app.platformsh.routes);
+
+      // this includes all our route data including default/all
+      app.platformsh.rawRoutes = pshconf.newParseRoutes(platformConfig.routes, app);
+      console.log('platform routes BEFORE filtering:');
+      console.log(JSON.stringify(app.platformsh.rawRoutes, null, 2));
+      // strips out {all} and {default}
+      // @todo wait, we need default and we need to swap it out to a lando domain
+      app.platformsh.routes = _(app.platformsh.rawRoutes)
+        .map((data, routeDomain) => ([routeDomain, data]))
+        .filter(route => !_.includes(route[0], '{'))
+        .fromPairs()
+        .value();
+      console.log('platform routes after filtering:');
+      console.log(JSON.stringify(app.platformsh.routes, null, 2));
+      pshconf.getPlatformDomains(app.platformsh.id, app.platformsh.tokens[0].token, app).then(pshDomains =>{
+        // @todo this works now?!
+        // console.log('Our domains from psh at line 149?');
+        // console.log(JSON.stringify(pshDomains, null, 2));
+        // eslint-disable-next-line max-len
+        // app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, prxyNoAll, pshDomains);
+        app.config.domains['app'] = _.union(app.config.domains['app'], pshDomains);
+      });
+        // console.log('collected domains?');
+        // console.log(JSON.stringify(app.config.domains['app']));
+
+      // app.platformsh.routes = pshconf.newParseRoutes(platformConfig.routes, pshApi, app);
+      // pshconf.getPlatformDomains(app.platformsh.id, app.platformsh.tokens[0].token, app).then(pshDomains =>{
+      //   console.log('Our domains from psh?');
+      //   console.log(pshDomains);
+      //   // eslint-disable-next-line max-len
+      //   // app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, prxyNoAll, pshDomains);
+      //   app.config.domains['app'] = _.union(app.config.domains['app'], pshDomains);
+      // });
+      // console.log('collected domains?');
+      // console.log(JSON.stringify(app.config.domains['app']));
+      //process.exit();
+      // let routeKeys = Object.keys(newRoutes);
+
+
+      // app.platformsh.routes = pshconf.parseRoutes(platformConfig.routes, app.platformsh.domain);
+      // console.log('routes');
+      // console.log(JSON.stringify(app.platformsh.routes, null, 2));
+      // eslint-disable-next-line max-len
+      // app.platformsh.routes['https://foobz.com'] = {primary: true,attributes: {}, id: null, original_url: 'https://foobz.com', type: 'upstream', upstream: 'app'};
+      app.platformsh.primaryRoute = _.findKey(app.platformsh.routes, {default_route: true});
+
+      // app.log.verbose('parsed platformsh routes');
+      // app.log.silly('platformsh routes are', app.platformsh.routes);
 
       // Add the parsed applications config
       app.platformsh.applications = pshconf.parseApps(platformConfig, app.root);
@@ -139,6 +189,16 @@ module.exports = (app, lando) => {
       app.log.verbose('the closest platform app is at %s', app.platformsh.closestApp.configFile);
       app.log.verbose('the closest open cache is %s', app.platformsh.closestOpenCache);
 
+      // ok we need to actually gather up all of our domains and aliases now in the pre-init event so we can add them
+      // to routes, but then wait until post-init before adding them as aliases
+      // app.events.on('pre-init', 0, () => {
+      //   // eslint-disable-next-line max-len
+      //   app.platformsh.routes['https://foobaz.com'] = {primary: true,attributes: {}, id: null, original_url: 'https://foobaz.com', type: 'upstream', upstream: 'app'};
+      // });
+
+      // now that we have the app name, let's set up storage for domains we may have later
+      app.config.domains = [];
+      app.config.domains[app.platformsh.closestApp.name] = [];
       // now lets handle adding proxy alias domains to lando that the app may need
       app.events.on('post-init', 1, ()=> {
          let platformAppName = app.platformsh.closestApp.name;
@@ -147,26 +207,38 @@ module.exports = (app, lando) => {
          const appProxyAliases = pshconf.getRouteDomains(platformConfig.routes, platformAppName);
          // if we find an index where original_url contains all
          if (0 < appProxyAliases.length) {
-           console.log('appProxyAliases before we do anything to it');
-           console.log(appProxyAliases);
+           // add the found domains
+           app.config.domains[platformAppName] = _.union(app.config.domains[platformAppName], appProxyAliases
+             // but we dont want to include {default|all}
+             .filter(domain => (-1 === domain.indexOf('{default}') && -1 === domain.indexOf('{all}')))
+           );
            // as we add the aliases, make sure we dont have any duplicates
            let currentProxies = app.config.proxy[platformAppName];
            let lndoDomain = app._config.domain;
            let pshProjID = app.platformsh.id;
-           if (-1 !== _.find(appProxyAliases, alias => -1 !== alias.indexOf('{all}'))) {
+           if (undefined !== _.find(appProxyAliases, alias => -1 !== alias.indexOf('{all}'))) {
              console.log('we have at least one route with {all}');
              const prxyNoAll = appProxyAliases.filter(proxy => -1 === proxy.indexOf('{all}'));
              pshconf.getPlatformDomains(pshProjID, pshApiToken, app).then(pshDomains =>{
-               console.log('Our domains from psh?');
+               console.log('Our domains from psh at line 224?');
                console.log(pshDomains);
                // eslint-disable-next-line max-len
                app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, prxyNoAll, pshDomains);
+               app.config.domains[platformAppName] = _.union(app.config.domains[platformAppName], pshDomains);
              });
            } else {
              console.log('none of our routes contain {all}');
              // eslint-disable-next-line max-len
              app.config.proxy[platformAppName] = pshconf.combineAllProxyDomains(lndoDomain, currentProxies, appProxyAliases);
            }
+
+           // now update the routes
+           console.log('Our domains before we convert them to routes');
+           console.log(JSON.stringify(app.config.domains[platformAppName], null, 2));
+           // eslint-disable-next-line max-len
+           app.platformsh.routes = _.union(app.platformsh.routes, pshconf.buildExtraRoutes(app.config.domains[platformAppName], platformAppName));
+           console.log('Our routes after adding the new ones');
+           console.log(JSON.stringify(app.platformsh.routes, null, 2));
          } else {
            console.log('No domains to add. Proceeding.');
          }
