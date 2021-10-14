@@ -112,14 +112,14 @@ const getJustTheDomain = (route) => {
  * @param {array} pshDomains
  */
 exports.combineAllProxyDomains = (lndoDomain, defaultProxies, yamlProxies, pshDomains = [] ) => {
-  console.log('our yamlProxies');
-  console.log(yamlProxies);
-  console.log('our pshDomains');
-  console.log(pshDomains);
+  // console.log('our yamlProxies');
+  // console.log(yamlProxies);
+  // console.log('our pshDomains');
+  // console.log(pshDomains);
   const extraProxies = _.union(yamlProxies,pshDomains)
     .map(domain => createLandoDomain(domain,lndoDomain));
-  console.log('all our extra proxies with their shiny lando domains');
-  console.log(JSON.stringify(extraProxies, null, 2));
+  // console.log('all our extra proxies with their shiny lando domains');
+  // console.log(JSON.stringify(extraProxies, null, 2));
   return _.union(defaultProxies,extraProxies);
 }
 
@@ -239,7 +239,7 @@ exports.parseRelationships = (apps, open = {}) => _(apps)
  * @return {any[]}
  */
 exports.newParseRoutes = (routes, app) => {
-  console.log('hello from the routes parser');
+  // console.log('hello from the routes parser');
   // psh project id
   let projectID = app.platformsh.id;
   // the lando domain as defined in config
@@ -259,8 +259,8 @@ exports.newParseRoutes = (routes, app) => {
     .fromPairs()
     .value();
 
-  console.log('our Routes at 257');
-  console.log(JSON.stringify(ourRoutes,null,2));
+  // console.log('our Routes at 257');
+  // console.log(JSON.stringify(ourRoutes,null,2));
 
   let routeKeys = Object.keys(ourRoutes);
   // @todo initially I wanted to try and deal with grabbing all our other domains from this location but for the life of
@@ -270,8 +270,8 @@ exports.newParseRoutes = (routes, app) => {
 
   if (undefined !== _.find(routeKeys, route => -1 !== route.indexOf('{default}'))) {
     // @todo if we decide to keep other redirects in routes, we'll need to add the www.{default} route in
-    console.log('We have a default route we need to deal with');
-    //@todo does javavscript have a sprintf?
+    // console.log('We have a default route we need to deal with');
+    //@todo does javavscript have a sprintf? or do a .replace here instead?
     const defaultRouteDomain = 'https://'+ldnoDomain+'/';
     // @todo we need the closest app name so we can add it as the upstream property
     const newDefaultRoute = {
@@ -332,6 +332,25 @@ exports.buildExtraRoutes = (domains, appname) => _(domains)
   .fromPairs()
   .value();
 
+exports.buildRoutesFromAttachedDomains = (domains, appname, ldnoDomain) => _(domains)
+  .map(domain => {
+    let newDomain = `https://${domain}.${ldnoDomain}/`;
+    return ([newDomain,{primary: true, attributes: {}, id: null, original_url: `https://${domain}/`, type: 'upstream', upstream: appname}]);
+  })
+  .fromPairs()
+  .value();
+
+exports.filterTokensRedirectsFromRoutes = (routes, appname) => _(routes)
+  .map((data,domain) => ([domain,data]))
+  // we dont want routes that contain a token
+  .filter(route => !_.includes(route[0], '{'))
+  // @todo if we decide we DO want redirects, we'll need to remove this one
+  // we dont want routes that aren't an upstream
+  .filter(route => route[1].type === 'upstream')
+  // we don't want routes that aren't for the app in question
+  .filter(route => -1 !== route[1].upstream.indexOf(appname))
+  .fromPairs()
+  .value();
 /**
  * Converts the list of routes from routes.yaml that are primary types for a specific app (appname) into "local" domains
  * to be added as proxy aliases
@@ -366,11 +385,12 @@ exports.getPlatformDomains = async (projectID, pshApiToken, app) => {
   const pshApi = new PlatformshApiClient({api_token: pshApiToken});
   const newDomains = await pshApi.getProject(projectID)
     .then((project) => project.getDomains())
+    // @todo switch back to this one later
     //.then((domains) => domains.map(domain => domain.name))
     .then((domains) => {
-      console.log('domains at 409');
-      console.log(JSON.stringify(domains));
-      return domains;
+      // console.log('domains at 409');
+      // console.log(JSON.stringify(domains));
+      return domains.map(domain => domain.name);
     }, (rejected)=>{
       console.log('REJECTED!!!!!!!!!');
       console.log(rejected);
